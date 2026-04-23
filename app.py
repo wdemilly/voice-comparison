@@ -20,18 +20,29 @@ st.title("Voice Comparison")
 st.caption("Stage 2 voice classifier: P(human) = shape-similarity to Dare/Quinn commercial HR register.")
 
 # ---- Load classifier + feature extractor ----
-@st.cache_resource
-def load_classifier(path="classifier.pkl"):
-    if not os.path.exists(path):
-        return None, f"classifier.pkl not found at repo root"
-    try:
-        with open(path, "rb") as f:
-            bundle = pickle.load(f)
-        return bundle, None
-    except Exception as e:
-        return None, f"could not load classifier.pkl: {e}"
+CANDIDATE_PATHS = [
+    "classifier.pkl",
+    "output/classifier.pkl",
+    "separation_test/output/classifier.pkl",
+    "separation_test/classifier.pkl",
+]
 
-bundle, load_err = load_classifier()
+@st.cache_resource
+def load_classifier_from_path():
+    for p in CANDIDATE_PATHS:
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as f:
+                    return pickle.load(f), p
+            except Exception as e:
+                return None, f"found {p} but could not unpickle: {e}"
+    return None, None
+
+def load_classifier_from_bytes(data):
+    try:
+        return pickle.loads(data), None
+    except Exception as e:
+        return None, f"could not unpickle uploaded file: {e}"
 
 try:
     from separation_test import extract_pairs_from_text, extract_features
@@ -41,10 +52,26 @@ except Exception as e:
     st.code(f"Import error: {e}")
     st.stop()
 
+bundle, path_info = load_classifier_from_path()
+
 if bundle is None:
-    st.error(load_err)
-    st.info("Copy your trained classifier.pkl (from separation_test/output/) to the repo root.")
-    st.stop()
+    st.warning("classifier.pkl not found at any expected path in the repo.")
+    st.caption(f"Tried: {', '.join(CANDIDATE_PATHS)}")
+    with st.expander("Debug: what IS at the repo root?"):
+        try:
+            st.code("\n".join(sorted(os.listdir("."))))
+        except Exception as e:
+            st.code(f"Could not list repo root: {e}")
+    uploaded_pkl = st.file_uploader("Upload classifier.pkl directly", type=["pkl"])
+    if uploaded_pkl is None:
+        st.stop()
+    bundle, err = load_classifier_from_bytes(uploaded_pkl.read())
+    if bundle is None:
+        st.error(err)
+        st.stop()
+    path_info = f"uploaded: {uploaded_pkl.name}"
+
+st.success(f"Classifier loaded from: {path_info}")
 
 # ---- Sidebar ----
 st.sidebar.markdown("**Classifier loaded**")
